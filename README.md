@@ -1,698 +1,212 @@
-# Technical Design Specification
+# Multi-Agent AI Travel Planner
 
-# Multi-Agent AI Travel Planning System
+DDM501 Lab 3 & Lab 4 submission — a multi-agent travel planning system built with LangGraph, GPT-4o-mini, ChromaDB (local RAG), and self-hosted Langfuse observability.
 
-Version: 2.0
+## Architecture
 
----
-
-# 1. Introduction
-
-## 1.1 Purpose
-
-The purpose of this project is to develop an intelligent Multi-Agent AI Travel Planning System capable of assisting users throughout the complete travel planning process.
-
-The system is designed around the concept of Agentic AI, where multiple specialized AI agents collaborate to solve complex travel planning tasks rather than relying on a single monolithic prompt.
-
-The application should generate an optimized travel plan based on user preferences, budget, interests, weather conditions, and real-time travel information.
-
----
-
-# 1.2 Design Principles
-
-The system follows these principles:
-
-• Single Responsibility per Agent
-
-Each agent should have only one responsibility.
-
-• Tool-based Architecture
-
-Agents should use tools rather than embedding business logic.
-
-• Hybrid Knowledge Retrieval
-
-Static knowledge → RAG
-
-Dynamic knowledge → Tavily
-
-Realtime information → External APIs
-
-• Shared State
-
-All agents communicate only through LangGraph State.
-
-Agents must never communicate directly.
-
----
-
-# 2. High-Level Architecture
-
-                    User
-                      │
-                      ▼
-             Supervisor Agent
-                      │
-      ┌───────────────┴───────────────┐
-      ▼                               ▼
- General Agent            Travel Planning Workflow
-                                      │
-                                      ▼
-                       Travel Knowledge Agent
-                         │            │
-                  RAG Tool      Tavily Tool
-                                      │
-                                      ▼
-                             Planner Agent
-                         ┌──────┼────────┐
-                         ▼      ▼        ▼
-                  Weather   Maps   Budget Tool
+```
+User Input
+    │
+    ▼
+┌─────────────┐
+│  Supervisor  │  ← Semantic router (JSON output, intent classification)
+└─────┬───────┘
+      │
+  route?
+  ┌───┴──────────┐
+  │              │
+  ▼              ▼
+┌──────────┐  ┌──────────────────────┐
+│ General  │  │ Travel Knowledge     │
+│ Agent    │  │ Agent                │
+│ (LLM)   │  │ (RAG + Tavily)       │
+└────┬─────┘  └──────────┬───────────┘
+     │                   │
+     ▼                   ▼
+  final_response    ┌────────────┐
+                    │  Planner   │
+                    │  Agent     │
+                    │ (Weather + │
+                    │  Maps +    │
+                    │  Budget)   │
+                    └────┬───────┘
                          │
                          ▼
-                 Final Travel Plan
+                    final_response
+```
+
+### Agents
+
+| Agent | Tools | Responsibility |
+|---|---|---|
+| **Supervisor** | None | Semantic routing + entity extraction |
+| **General Agent** | None | Greetings, tips, visa, etiquette |
+| **Travel Knowledge Agent** | `rag_search`, `tavily_search` | Destination information retrieval |
+| **Planner Agent** | `get_weather`, `get_distance`, `calculate_budget` | Itinerary + budget generation |
+
+### Lab 3 Requirements Met
+- [x] Multi-agent architecture with ≥2 agents
+- [x] Semantic router (Supervisor with JSON output)
+- [x] LangGraph StateGraph with MemorySaver (persistent chat history)
+- [x] Route metadata displayed in UI
+- [x] ≥6 routing unit tests (`tests/test_routing.py`)
+- [x] RAG with ChromaDB + local sentence-transformers embeddings
+
+### Lab 4 Requirements Met
+- [x] Self-hosted Langfuse via Docker Compose (`docker-compose.yml`)
+- [x] UUID trace_id per request
+- [x] Session ID and user_id metadata in traces
+- [x] Route tag in Langfuse traces
+- [x] 👍/👎 feedback buttons in UI
+- [x] Graceful degradation when Langfuse not configured
+- [x] ≥4 observability unit tests (`tests/test_observability.py`)
 
 ---
 
-# 3. Agent Responsibilities
+## Quick Start
 
-The system consists of four logical agents.
+### 1. Prerequisites
 
-1. Supervisor Agent
+- Python 3.11+
+- Docker + Docker Compose (for Langfuse, Lab 4)
 
-2. General Agent
+### 2. Install dependencies
 
-3. Travel Knowledge Agent
+```bash
+cd src/Travel-Agent
+pip install -r requirements.txt
+```
 
-4. Planner Agent
+### 3. Configure environment
 
-No additional agents should be created unless necessary.
+```bash
+cp .env.example .env
+# Edit .env and fill in your API keys
+```
 
-Business logic should remain inside Tools whenever possible.
+Required keys:
+```
+OPENAI_API_KEY=sk-...
+TAVILY_API_KEY=tvly-...
+OPENWEATHERMAP_API_KEY=...
+GOOGLE_MAPS_API_KEY=...
+```
 
----
+### 4. Ingest travel knowledge (first run)
 
-# 4. Supervisor Agent
+```bash
+python scripts/ingest.py
+# Optional: reset and re-ingest
+python scripts/ingest.py --reset
+```
 
-## Responsibility
+This loads 6 Vietnamese destination guides into ChromaDB at `./vector_db/`.
 
-The Supervisor Agent is the entry point of the application.
+### 5. Start Langfuse (Lab 4, optional)
 
-Responsibilities
+```bash
+docker compose up -d
+```
 
-• Understand user intent
+Then open [http://localhost:3000](http://localhost:3000), create a project, and copy the API keys into `.env`:
+```
+LANGFUSE_PUBLIC_KEY=pk-lf-...
+LANGFUSE_SECRET_KEY=sk-lf-...
+LANGFUSE_HOST=http://localhost:3000
+```
 
-• Decide execution workflow
+### 6. Launch the app
 
-• Route requests
+```bash
+python main.py
+# or directly:
+streamlit run ui/streamlit_app.py
+```
 
-• Maintain LangGraph State
-
-• Invoke specialized agents
-
-The Supervisor never performs reasoning about travel.
-
-It only orchestrates.
-
-Example
-
-User
-
-"I want a 4-day trip to Da Nang under 12 million."
-
-Execution
-
-Supervisor
-
-↓
-
-Travel Knowledge Agent
-
-↓
-
-Planner Agent
-
-↓
-
-Return response
-
----
-
-# 5. General Agent
-
-Purpose
-
-Handle conversations unrelated to travel planning.
-
-Examples
-
-Greetings
-
-General Questions
-
-Travel Tips
-
-Visa Questions
-
-Packing Advice
-
-The General Agent does not use:
-
-RAG
-
-Tavily
-
-Weather API
-
-Maps API
-
-Budget Tool
+Open [http://localhost:8501](http://localhost:8501).
 
 ---
 
-# 6. Travel Knowledge Agent
+## Example Queries
 
-Purpose
+**General (routed to General Agent):**
+- "Xin chào!"
+- "Đi biển cần mang theo những gì?"
+- "Visa Việt Nam cần những giấy tờ gì?"
 
-Provide travel knowledge.
-
-Responsibilities
-
-Retrieve destination information.
-
-Merge knowledge from multiple sources.
-
-Never generate travel plans.
-
-Never estimate budgets.
-
-Never generate itineraries.
-
-Instead, provide structured travel context.
+**Travel planning (routed to Knowledge + Planner):**
+- "Lên kế hoạch 3 ngày tại Đà Nẵng, ngân sách 5 triệu"
+- "Tôi muốn đi Hội An 2 ngày, thích ẩm thực và văn hóa"
+- "Kế hoạch 5 ngày Hà Nội cho cặp đôi, ngân sách 10 triệu"
 
 ---
 
-Knowledge Sources
+## Running Tests
 
-Static Knowledge
+```bash
+# From Travel-Agent/ directory
+pytest tests/ -v
 
-Provided by RAG.
-
-Contains
-
-History
-
-Culture
-
-Cuisine
-
-Travel Etiquette
-
-Transportation Guide
-
-Destination Overview
-
-Travel Tips
-
-Dynamic Knowledge
-
-Provided by Tavily.
-
-Contains
-
-Hotel Prices
-
-Tour Prices
-
-Airline Tickets
-
-Tourist News
-
-Restaurant Reviews
-
-Festivals
-
-Trending Destinations
-
-Events
-
-The Travel Knowledge Agent should automatically decide whether
-
-RAG
-
-Tavily
-
-or both
-
-are required.
+# Individual suites
+pytest tests/test_routing.py -v        # Lab 3 routing tests (≥6)
+pytest tests/test_observability.py -v  # Lab 4 observability tests (≥4)
+pytest tests/test_tools.py -v
+pytest tests/test_agents.py -v
+```
 
 ---
 
-Output Example
+## Project Structure
 
-Destination Summary
-
-Recommended Attractions
-
-Local Food
-
-Transportation
-
-Hotel Information
-
-Flight Information
-
-Tour Prices
-
-Travel News
-
-Festival Information
-
----
-
-# 7. Planner Agent
-
-The Planner Agent is the intelligence center of the application.
-
-It receives
-
-Travel Context
-
-User Preferences
-
-Budget
-
-Weather
-
-Travel Dates
-
-Interests
-
-Then generates
-
-Personalized Travel Plan
-
-The Planner Agent should never search information itself.
-
-Instead it must use Tools.
+```
+Travel-Agent/
+├── app/
+│   ├── config.py          # Environment variable management
+│   ├── state.py           # TravelState (TypedDict + MemorySaver)
+│   ├── supervisor.py      # Semantic router node
+│   ├── router.py          # Conditional edge function
+│   ├── graph.py           # StateGraph assembly
+│   └── observability.py   # Langfuse handler + feedback
+├── agents/
+│   ├── general_agent.py
+│   ├── travel_knowledge_agent.py
+│   └── planner_agent.py
+├── tools/
+│   ├── budget.py          # Pure calculation
+│   ├── weather.py         # OpenWeatherMap
+│   ├── tavily.py          # Tavily + LLM summarization
+│   ├── maps.py            # Google Maps Distance Matrix
+│   └── rag.py             # ChromaDB + sentence-transformers
+├── data/destinations/     # 6 Vietnamese destination guides
+├── prompts/               # System prompts for each agent
+├── scripts/
+│   └── ingest.py          # ChromaDB ingestion pipeline
+├── tests/
+│   ├── test_routing.py    # 8 routing tests (Lab 3)
+│   ├── test_tools.py      # Tool unit tests
+│   ├── test_agents.py     # Agent scope tests
+│   └── test_observability.py  # 7 observability tests (Lab 4)
+├── ui/
+│   └── streamlit_app.py   # Streamlit UI
+├── docker-compose.yml     # Self-hosted Langfuse + PostgreSQL
+├── main.py                # Entry point
+├── requirements.txt
+└── .env.example
+```
 
 ---
 
-Planner Tools
-
-Weather Tool
-
-Google Maps Tool
-
-Budget Calculator
-
-Preference Optimizer
-
-Schedule Generator
-
----
-
-Planner Workflow
-
-Need weather?
-
-↓
-
-Weather Tool
-
-Need travel distance?
-
-↓
-
-Maps Tool
-
-Need cost estimation?
-
-↓
-
-Budget Tool
-
-Generate itinerary
-
-Return response
-
----
-
-Planner Output
-
-Daily itinerary
-
-Estimated budget
-
-Recommended hotels
-
-Recommended restaurants
-
-Transportation
-
-Warnings
-
-Travel tips
-
----
-
-# 8. Tool Specification
-
-## 8.1 RAG Tool
-
-Purpose
-
-Retrieve static travel knowledge.
-
-Vector Store
-
-ChromaDB
-
-Embedding
-
-HuggingFace
-
-Knowledge
-
-History
-
-Culture
-
-Cuisine
-
-Travel Guide
-
-Destination Overview
-
----
-
-## 8.2 Tavily Tool
-
-Purpose
-
-Retrieve realtime information.
-
-Typical Queries
-
-Tour Prices
-
-Flight Prices
-
-Hotel Prices
-
-Restaurant Reviews
-
-Tourist News
-
-Events
-
-Travel Warnings
-
-Festivals
-
-Trending Places
-
-All Tavily results must be summarized before entering the graph state.
-
----
-
-## 8.3 Weather Tool
-
-Purpose
-
-Retrieve weather forecast.
-
-Output
-
-Temperature
-
-Rain
-
-Humidity
-
-Weather Condition
-
-Planner decides how to use it.
-
----
-
-## 8.4 Maps Tool
-
-Purpose
-
-Estimate
-
-Travel Distance
-
-Travel Duration
-
-Route
-
-Planner decides how to optimize itinerary.
-
----
-
-## 8.5 Budget Tool
-
-Purpose
-
-Estimate travel expenses.
-
-Inputs
-
-Hotel
-
-Transportation
-
-Flights
-
-Food
-
-Activities
-
-Shopping
-
-Output
-
-Budget Breakdown
-
-Remaining Budget
-
-Budget Suggestions
-
-The Budget Tool must not perform reasoning.
-
-Only calculation.
-
----
-
-# 9. RAG Knowledge Base
-
-The RAG database intentionally remains lightweight.
-
-The objective is not replacing Tavily.
-
-Instead it provides reliable background knowledge.
-
-Folder Structure
-
-data/
-
-    destinations/
-
-    culture/
-
-    cuisine/
-
-    travel_guides/
-
-    travel_tips/
-
-Example Documents
-
-Da Nang
-
-Hoi An
-
-Hue
-
-Da Lat
-
-Phu Quoc
-
-Sa Pa
-
-Nha Trang
-
-Estimated Size
-
-20–30 destinations
-
-Each document
-
-2–5 pages
-
-Total
-
-100–200 pages
-
----
-
-# 10. LangGraph State
-
-Every node shares the same state.
-
-Example
-
-class TravelState(TypedDict):
-
-    messages
-
-    user_query
-
-    destination
-
-    travel_dates
-
-    duration
-
-    budget
-
-    interests
-
-    rag_context
-
-    tavily_context
-
-    weather
-
-    travel_distance
-
-    estimated_budget
-
-    itinerary
-
-    final_response
-
-No agent should maintain private memory.
-
----
-
-# 11. Project Structure
-
-travel-agent/
-
-    app/
-
-        graph.py
-
-        state.py
-
-        supervisor.py
-
-        router.py
-
-    agents/
-
-        general_agent.py
-
-        travel_knowledge_agent.py
-
-        planner_agent.py
-
-    tools/
-
-        rag.py
-
-        tavily.py
-
-        weather.py
-
-        maps.py
-
-        budget.py
-
-    prompts/
-
-        supervisor.md
-
-        general.md
-
-        travel_knowledge.md
-
-        planner.md
-
-    data/
-
-        destinations/
-
-        culture/
-
-        cuisine/
-
-        travel_guides/
-
-    vector_db/
-
-    ui/
-
-        gradio.py
-
-    tests/
-
-    README.md
-
----
-
-# 12. Development Rules
-
-Every Agent
-
-• Only one responsibility
-
-Every Tool
-
-• No reasoning
-
-Only data retrieval or calculation
-
-Planner
-
-• Only planner
-
-Never search
-
-Travel Knowledge Agent
-
-• Only retrieve information
-
-Never generate itinerary
-
-Supervisor
-
-• Only orchestration
-
-Never answer user directly
-
----
-
-# 13. Future Extensions
-
-Google Places API
-
-Booking API
-
-Amadeus Flight API
-
-Calendar Integration
-
-Expense Tracker
-
-Voice Assistant
-
-Travel Memory
-
-Multi-language Support
-
-PDF Export
-
-Mobile Application
+## Tech Stack
+
+| Component | Technology |
+|---|---|
+| LLM | GPT-4o-mini via LangChain OpenAI |
+| Orchestration | LangGraph (StateGraph + MemorySaver) |
+| Vector DB | ChromaDB (persistent local) |
+| Embeddings | sentence-transformers/all-MiniLM-L6-v2 (local) |
+| Real-time search | Tavily API |
+| Weather | OpenWeatherMap API |
+| Maps | Google Maps Distance Matrix API |
+| UI | Streamlit |
+| Observability | Langfuse (self-hosted via Docker) |
+| Tests | pytest + pytest-mock |

@@ -1,6 +1,8 @@
 """Entry point for the Multi-Agent Travel Planning System."""
-from ui.gradio import build_ui
+import subprocess
+import sys
+import os
 
 if __name__ == "__main__":
-    app = build_ui()
-    app.launch(server_name="0.0.0.0", server_port=7860, share=False)
+    ui_path = os.path.join(os.path.dirname(__file__), "ui", "streamlit_app.py")
+    subprocess.run([sys.executable, "-m", "streamlit", "run", ui_path], check=True)
