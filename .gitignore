@@ -1,0 +1,21 @@
+# Environment
+.env
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+venv/
+*.egg-info/
+dist/
+build/
+
+# Vector DB (generated, không commit)
+vector_db/
+
+# Jupyter
+.ipynb_checkpoints/
+
+# OS
+.DS_Store
