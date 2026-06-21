@@ -8,7 +8,7 @@ import uuid
 import streamlit as st
 from langchain_core.messages import HumanMessage
 from app.graph import graph
-from app.observability import get_langfuse_handler, submit_feedback
+from app.observability import get_langfuse_handler, flush_handler, submit_feedback
 
 st.set_page_config(
     page_title="🗺️ AI Travel Planner",
@@ -108,12 +108,7 @@ if user_input:
                 response_text = f"Đã xảy ra lỗi: {str(e)}"
                 route_taken = "general"
             finally:
-                # Flush Langfuse buffer so traces appear immediately in dashboard
-                if handler:
-                    try:
-                        handler.flush()
-                    except Exception:
-                        pass
+                flush_handler(handler)
 
         st.markdown(response_text)
         route_label = "🧭 General Agent" if route_taken == "general" else "🏖️ Travel Knowledge + Planner"
