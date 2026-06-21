@@ -22,6 +22,16 @@ for key in OPENAI_API_KEY TAVILY_API_KEY OPENWEATHERMAP_API_KEY GOOGLE_MAPS_API_
 done
 
 # ── 2. Python venv ─────────────────────────────────────────────────────────
+# Rebuild if numpy>=2 is installed (incompatible with PyTorch 2.2 on Intel Mac)
+if [[ -d .venv ]]; then
+  numpy_ver=$(.venv/bin/python -c "import numpy; print(numpy.__version__)" 2>/dev/null || echo "0")
+  major="${numpy_ver%%.*}"
+  if [[ "$major" -ge 2 ]]; then
+    echo "⚠️  NumPy $numpy_ver detected (incompatible with PyTorch 2.2). Rebuilding .venv..."
+    rm -rf .venv
+  fi
+fi
+
 if [[ ! -d .venv ]]; then
   echo "📦 Creating virtual environment..."
   python3 -m venv .venv
@@ -31,7 +41,7 @@ source .venv/bin/activate
 
 echo "📦 Installing dependencies..."
 pip install -q --upgrade pip
-pip install -q -r requirements.txt --upgrade
+pip install -q -r requirements.txt
 
 # ── 3. Ingest knowledge base (skip if vector_db already populated) ─────────
 if [[ ! -d vector_db ]] || [[ -z "$(ls -A vector_db 2>/dev/null)" ]]; then
