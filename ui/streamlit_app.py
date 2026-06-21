@@ -1,4 +1,9 @@
 """Streamlit UI — Multi-Agent Travel Planning System."""
+import sys
+import os
+# Ensure project root is on sys.path regardless of how streamlit is invoked
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
 import uuid
 import streamlit as st
 from langchain_core.messages import HumanMessage

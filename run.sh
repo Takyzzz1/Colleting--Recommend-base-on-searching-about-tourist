@@ -31,7 +31,7 @@ source .venv/bin/activate
 
 echo "📦 Installing dependencies..."
 pip install -q --upgrade pip
-pip install -q -r requirements.txt
+pip install -q -r requirements.txt --upgrade
 
 # ── 3. Ingest knowledge base (skip if vector_db already populated) ─────────
 if [[ ! -d vector_db ]] || [[ -z "$(ls -A vector_db 2>/dev/null)" ]]; then
@@ -62,7 +62,7 @@ echo "🚀 Starting Multi-Agent AI Travel Planner..."
 echo "   Open http://localhost:8501 in your browser"
 echo ""
 
-streamlit run ui/streamlit_app.py \
+PYTHONPATH="$SCRIPT_DIR" streamlit run ui/streamlit_app.py \
   --server.port 8501 \
   --server.address 0.0.0.0 \
   --server.headless true
