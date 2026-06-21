@@ -34,7 +34,12 @@ for turn in st.session_state.chat_history:
     with st.chat_message(turn["role"]):
         st.markdown(turn["content"])
         if turn["role"] == "assistant" and turn.get("route"):
-            route_label = "🧭 General Agent" if turn["route"] == "general" else "🏖️ Travel Knowledge + Planner"
+            _route_labels = {
+                "general": "🧭 General Agent",
+                "travel": "🏖️ Travel Knowledge + Planner + Tour Comparison",
+                "clarify": "❓ Cần thêm thông tin",
+            }
+            route_label = _route_labels.get(turn["route"], "🏖️ Travel Knowledge + Planner")
             st.caption(f"Route: **{route_label}**")
 
 # ── Feedback buttons (only after last assistant turn) ─────────────────────────
@@ -66,7 +71,7 @@ if user_input:
     st.session_state.feedback_submitted = False
 
     # Build trace_id for this turn
-    trace_id = str(uuid.uuid4())
+    trace_id = uuid.uuid4().hex
 
     # Invoke the graph
     with st.chat_message("assistant"):
@@ -96,6 +101,7 @@ if user_input:
                 "travel_distances": {},
                 "estimated_budget": {},
                 "itinerary": "",
+                "tour_comparison": "",
                 "final_response": "",
                 "route": "general",
             }
@@ -111,7 +117,12 @@ if user_input:
                 flush_handler(handler)
 
         st.markdown(response_text)
-        route_label = "🧭 General Agent" if route_taken == "general" else "🏖️ Travel Knowledge + Planner"
+        _route_labels = {
+            "general": "🧭 General Agent",
+            "travel": "🏖️ Travel Knowledge + Planner",
+            "clarify": "❓ Cần thêm thông tin",
+        }
+        route_label = _route_labels.get(route_taken, "🏖️ Travel Knowledge + Planner")
         st.caption(f"Route: **{route_label}**")
 
     # Persist to chat history

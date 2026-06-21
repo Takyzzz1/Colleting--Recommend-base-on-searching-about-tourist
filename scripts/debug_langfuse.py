@@ -59,38 +59,39 @@ except Exception as e:
     sys.exit(1)
 
 
-# ── Step 4: Tạo trace và gửi ─────────────────────────────────────────────────
-step(4, "Tạo trace test và flush")
+# ── Step 4: Tạo trace_id và flush qua get_client() ───────────────────────────
+step(4, "Tạo trace_id và flush (langfuse 4.x API)")
 try:
-    import uuid
-    trace_id = str(uuid.uuid4())
-    trace = lf.trace(
-        id=trace_id,
-        name="debug-test",
-        user_id="debug-script",
-        tags=["debug"],
-    )
-    lf.flush()
-    print(f"  ✅ Trace tạo thành công: {trace_id}")
-    print(f"  Kiểm tra trên Langfuse: {host}/traces/{trace_id}")
+    import uuid, os
+    os.environ["LANGFUSE_PUBLIC_KEY"] = pk
+    os.environ["LANGFUSE_SECRET_KEY"] = sk
+    os.environ["LANGFUSE_HOST"] = host
+
+    from langfuse import get_client
+    client = get_client()
+    trace_id = uuid.uuid4().hex
+    client.create_trace_id()  # warm up
+    client.flush()
+    print(f"  ✅ get_client() OK, flush OK")
+    print(f"  trace_id sẽ dùng: {trace_id}")
 except Exception as e:
-    print(f"  ❌ Tạo trace thất bại: {e}")
+    print(f"  ❌ get_client/flush thất bại: {e}")
     sys.exit(1)
 
 
-# ── Step 5: Test get_langchain_handler ────────────────────────────────────────
-step(5, "Test trace.get_langchain_handler()")
+# ── Step 5: Test CallbackHandler (langfuse.langchain) ─────────────────────────
+step(5, "Test langfuse.langchain.CallbackHandler")
 try:
-    trace2 = lf.trace(id=str(uuid.uuid4()), name="handler-test")
-    handler = trace2.get_langchain_handler()
+    from langfuse.langchain import CallbackHandler
+    handler = CallbackHandler(
+        public_key=pk,
+        trace_context={"trace_id": trace_id},
+    )
     print(f"  ✅ Handler tạo OK: {type(handler).__name__}")
-    inner_client = getattr(handler, "langfuse", None)
-    print(f"  handler.langfuse: {type(inner_client).__name__ if inner_client else '❌ None'}")
-    if inner_client:
-        inner_client.flush()
-        print("  ✅ flush() OK")
+    lc = getattr(handler, "_langfuse_client", None)
+    print(f"  handler._langfuse_client: {type(lc).__name__ if lc else '❌ None'}")
 except Exception as e:
-    print(f"  ❌ Handler failed: {e}")
+    print(f"  ❌ CallbackHandler failed: {e}")
     sys.exit(1)
 
 
@@ -103,18 +104,25 @@ else:
     try:
         from langchain_openai import ChatOpenAI
         from langchain_core.messages import HumanMessage
+        from langfuse.langchain import CallbackHandler
+        from langfuse import get_client
 
-        trace3 = lf.trace(id=str(uuid.uuid4()), name="llm-callback-test", tags=["debug"])
-        cb_handler = trace3.get_langchain_handler()
+        llm_trace_id = uuid.uuid4().hex
+        cb_handler = CallbackHandler(
+            public_key=pk,
+            trace_context={"trace_id": llm_trace_id},
+        )
 
         llm = ChatOpenAI(model=app_config.LLM_MODEL, temperature=0, openai_api_key=openai_key)
-        response = llm.invoke([HumanMessage(content="Nói 'OK' bằng tiếng Việt.")],
-                              config={"callbacks": [cb_handler]})
+        response = llm.invoke(
+            [HumanMessage(content="Nói 'OK' bằng tiếng Việt.")],
+            config={"callbacks": [cb_handler]},
+        )
         print(f"  ✅ LLM response: {response.content[:80]}")
 
-        cb_handler.langfuse.flush()
-        print(f"  ✅ Trace ID: {trace3.id}")
-        print(f"  Kiểm tra: {host}/traces/{trace3.id}")
+        get_client().flush()
+        print(f"  ✅ Trace ID: {llm_trace_id}")
+        print(f"  Kiểm tra: {host}/traces/{llm_trace_id}")
     except Exception as e:
         print(f"  ❌ LangChain callback test failed: {e}")
         sys.exit(1)

@@ -1,4 +1,4 @@
-"""Langfuse observability for LangGraph tracing (self-hosted via Docker)."""
+"""Langfuse observability — compatible with langfuse >= 4.x."""
 import uuid
 import logging
 from typing import Optional
@@ -8,12 +8,9 @@ logger = logging.getLogger(__name__)
 
 
 def check_langfuse() -> tuple[bool, str]:
-    """
-    Verify Langfuse connection. Returns (ok, message).
-    Call this at startup or from the sidebar to diagnose issues.
-    """
+    """Verify Langfuse keys and server connectivity. Returns (ok, message)."""
     if not app_config.LANGFUSE_PUBLIC_KEY or not app_config.LANGFUSE_SECRET_KEY:
-        return False, "Keys not set in .env (LANGFUSE_PUBLIC_KEY / LANGFUSE_SECRET_KEY)"
+        return False, "Keys not set (LANGFUSE_PUBLIC_KEY / LANGFUSE_SECRET_KEY)"
     try:
         from langfuse import Langfuse
         lf = Langfuse(
@@ -22,7 +19,7 @@ def check_langfuse() -> tuple[bool, str]:
             host=app_config.LANGFUSE_HOST,
         )
         lf.auth_check()
-        return True, f"Connected to {app_config.LANGFUSE_HOST}"
+        return True, f"Connected → {app_config.LANGFUSE_HOST}"
     except Exception as e:
         return False, str(e)
 
@@ -34,33 +31,27 @@ def get_langfuse_handler(
     route_taken: Optional[str] = None,
 ):
     """
-    Create a Langfuse trace and return its LangChain CallbackHandler.
-    Uses the langfuse 2.x API: Langfuse.trace() → trace.get_langchain_handler().
-    Returns (None, None) gracefully when keys are not configured.
+    Return a LangChain CallbackHandler for langfuse 4.x.
+    Keys are read from env vars (LANGFUSE_PUBLIC_KEY / SECRET_KEY / HOST).
+    Returns (handler, trace_id) or (None, None) if not configured.
     """
     if not app_config.LANGFUSE_PUBLIC_KEY or not app_config.LANGFUSE_SECRET_KEY:
         return None, None
 
     try:
-        from langfuse import Langfuse
+        import os
+        # langfuse 4.x reads these env vars internally
+        os.environ.setdefault("LANGFUSE_PUBLIC_KEY", app_config.LANGFUSE_PUBLIC_KEY)
+        os.environ.setdefault("LANGFUSE_SECRET_KEY", app_config.LANGFUSE_SECRET_KEY)
+        os.environ.setdefault("LANGFUSE_HOST", app_config.LANGFUSE_HOST)
 
-        _trace_id = trace_id or str(uuid.uuid4())
-        tags = [f"model-{app_config.LLM_MODEL}"]
-        if route_taken:
-            tags.append(f"route-{route_taken}")
+        from langfuse.langchain import CallbackHandler
 
-        lf = Langfuse(
+        _trace_id = trace_id or uuid.uuid4().hex
+        handler = CallbackHandler(
             public_key=app_config.LANGFUSE_PUBLIC_KEY,
-            secret_key=app_config.LANGFUSE_SECRET_KEY,
-            host=app_config.LANGFUSE_HOST,
+            trace_context={"trace_id": _trace_id},
         )
-        trace = lf.trace(
-            id=_trace_id,
-            session_id=session_id,
-            user_id=user_id or "anonymous",
-            tags=tags,
-        )
-        handler = trace.get_langchain_handler()
         return handler, _trace_id
     except Exception as e:
         logger.warning("Langfuse handler creation failed: %s", e)
@@ -68,32 +59,24 @@ def get_langfuse_handler(
 
 
 def flush_handler(handler) -> None:
-    """Flush pending Langfuse events. Safe to call even if handler is None."""
+    """Flush pending Langfuse events. Safe to call with None."""
     if handler is None:
         return
     try:
-        # langfuse 2.x: handler has a .langfuse attribute (the underlying client)
-        client = getattr(handler, "langfuse", None)
-        if client is not None:
-            client.flush()
-    except Exception:
-        pass
+        from langfuse import get_client
+        get_client().flush()
+    except Exception as e:
+        logger.debug("Langfuse flush failed: %s", e)
 
 
 def submit_feedback(trace_id: str, score: float, comment: str = "") -> bool:
-    """Submit 1.0 (👍) or 0.0 (👎) feedback to Langfuse for a given trace."""
+    """Submit 1.0 (👍) or 0.0 (👎) feedback for a trace."""
     if not trace_id or not app_config.LANGFUSE_PUBLIC_KEY:
         return False
-
     try:
-        from langfuse import Langfuse
-
-        client = Langfuse(
-            public_key=app_config.LANGFUSE_PUBLIC_KEY,
-            secret_key=app_config.LANGFUSE_SECRET_KEY,
-            host=app_config.LANGFUSE_HOST,
-        )
-        client.score(
+        from langfuse import get_client
+        client = get_client()
+        client.create_score(
             trace_id=trace_id,
             name="user_feedback",
             value=score,
@@ -101,5 +84,6 @@ def submit_feedback(trace_id: str, score: float, comment: str = "") -> bool:
         )
         client.flush()
         return True
-    except Exception:
+    except Exception as e:
+        logger.warning("Langfuse submit_feedback failed: %s", e)
         return False

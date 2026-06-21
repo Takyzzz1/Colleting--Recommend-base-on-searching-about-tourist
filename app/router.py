@@ -3,10 +3,12 @@ from app.state import TravelState
 
 
 def route_after_supervisor(state: TravelState) -> str:
-    """Route to travel_knowledge or general based on supervisor classification."""
+    """Route to travel_knowledge, general, or end early with a clarification question."""
     route = state.get("route", "general")
     if route == "travel":
         return "travel_knowledge"
+    if route == "clarify":
+        return "__end__"
     return "general"
 
 
