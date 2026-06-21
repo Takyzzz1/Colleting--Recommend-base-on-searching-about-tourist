@@ -3,7 +3,7 @@ import os
 from langchain_openai import ChatOpenAI
 from langchain_core.messages import SystemMessage, HumanMessage
 from langchain_core.runnables import RunnableConfig
-from app.config import config
+from app.config import config as app_config
 from app.state import TravelState
 
 _PROMPT_PATH = os.path.join(os.path.dirname(os.path.dirname(__file__)), "prompts", "general.md")
@@ -14,15 +14,15 @@ def _system_prompt() -> str:
         return f.read()
 
 
-def general_agent_node(state: TravelState, run_config: RunnableConfig) -> dict:
+def general_agent_node(state: TravelState, config: RunnableConfig) -> dict:
     llm = ChatOpenAI(
-        model=config.LLM_MODEL,
-        temperature=config.LLM_TEMPERATURE,
-        openai_api_key=config.OPENAI_API_KEY,
+        model=app_config.LLM_MODEL,
+        temperature=app_config.LLM_TEMPERATURE,
+        openai_api_key=app_config.OPENAI_API_KEY,
     )
     user_query = state.get("user_query") or ""
     response = llm.invoke(
         [SystemMessage(content=_system_prompt()), HumanMessage(content=user_query)],
-        config=run_config,
+        config=config,
     )
     return {"final_response": response.content}

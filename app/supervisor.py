@@ -5,7 +5,7 @@ import re
 from langchain_openai import ChatOpenAI
 from langchain_core.messages import SystemMessage, HumanMessage
 from langchain_core.runnables import RunnableConfig
-from app.config import config
+from app.config import config as app_config
 from app.state import TravelState
 
 _PROMPT_PATH = os.path.join(os.path.dirname(os.path.dirname(__file__)), "prompts", "supervisor.md")
@@ -33,7 +33,7 @@ def _parse_json(text: str) -> dict:
         return dict(_DEFAULT_OUTPUT)
 
 
-def supervisor_node(state: TravelState, run_config: RunnableConfig) -> dict:
+def supervisor_node(state: TravelState, config: RunnableConfig) -> dict:
     messages = state.get("messages", [])
     if messages:
         last_msg = messages[-1]
@@ -42,13 +42,13 @@ def supervisor_node(state: TravelState, run_config: RunnableConfig) -> dict:
         user_query = state.get("user_query", "")
 
     llm = ChatOpenAI(
-        model=config.LLM_MODEL,
+        model=app_config.LLM_MODEL,
         temperature=0,
-        openai_api_key=config.OPENAI_API_KEY,
+        openai_api_key=app_config.OPENAI_API_KEY,
     )
     response = llm.invoke(
         [SystemMessage(content=_system_prompt()), HumanMessage(content=user_query)],
-        config=run_config,
+        config=config,
     )
 
     parsed = _parse_json(response.content)
