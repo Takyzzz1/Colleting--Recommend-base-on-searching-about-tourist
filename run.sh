@@ -22,6 +22,16 @@ for key in OPENAI_API_KEY TAVILY_API_KEY OPENWEATHERMAP_API_KEY GOOGLE_MAPS_API_
 done
 
 # ── 2. Python venv ─────────────────────────────────────────────────────────
+# Rebuild if numpy>=2 is installed (incompatible with PyTorch 2.2 on Intel Mac)
+if [[ -d .venv ]]; then
+  numpy_ver=$(.venv/bin/python -c "import numpy; print(numpy.__version__)" 2>/dev/null || echo "0")
+  major="${numpy_ver%%.*}"
+  if [[ "$major" -ge 2 ]]; then
+    echo "⚠️  NumPy $numpy_ver detected (incompatible with PyTorch 2.2). Rebuilding .venv..."
+    rm -rf .venv
+  fi
+fi
+
 if [[ ! -d .venv ]]; then
   echo "📦 Creating virtual environment..."
   python3 -m venv .venv
@@ -62,7 +72,7 @@ echo "🚀 Starting Multi-Agent AI Travel Planner..."
 echo "   Open http://localhost:8501 in your browser"
 echo ""
 
-streamlit run ui/streamlit_app.py \
+PYTHONPATH="$SCRIPT_DIR" streamlit run ui/streamlit_app.py \
   --server.port 8501 \
   --server.address 0.0.0.0 \
   --server.headless true

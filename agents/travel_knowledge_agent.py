@@ -2,7 +2,8 @@
 import os
 from langchain_openai import ChatOpenAI
 from langchain_core.messages import SystemMessage, HumanMessage
-from app.config import config
+from langchain_core.runnables import RunnableConfig
+from app.config import config as app_config
 from app.state import TravelState
 from tools.rag import rag_search
 from tools.tavily import tavily_search
@@ -15,7 +16,7 @@ def _system_prompt() -> str:
         return f.read()
 
 
-def travel_knowledge_node(state: TravelState) -> dict:
+def travel_knowledge_node(state: TravelState, config: RunnableConfig) -> dict:
     destination = state.get("destination", "")
     user_query = state.get("user_query", "")
     interests = state.get("interests", [])
@@ -29,11 +30,10 @@ def travel_knowledge_node(state: TravelState) -> dict:
     rag_context = rag_result.get("context", "")
     tavily_context = tavily_result.get("summary", "")
 
-    # Let LLM synthesize a structured summary from the raw results
     llm = ChatOpenAI(
-        model=config.LLM_MODEL,
-        temperature=config.LLM_TEMPERATURE,
-        openai_api_key=config.OPENAI_API_KEY,
+        model=app_config.LLM_MODEL,
+        temperature=app_config.LLM_TEMPERATURE,
+        openai_api_key=app_config.OPENAI_API_KEY,
     )
     synthesis_prompt = (
         f"Người dùng hỏi: {user_query}\n\n"
@@ -41,13 +41,13 @@ def travel_knowledge_node(state: TravelState) -> dict:
         f"Thông tin thực tế từ internet (Tavily):\n{tavily_context}\n\n"
         "Hãy tổng hợp thành một bản tóm tắt có cấu trúc theo định dạng quy định trong prompt hệ thống."
     )
-    response = llm.invoke([
-        SystemMessage(content=_system_prompt()),
-        HumanMessage(content=synthesis_prompt),
-    ])
+    response = llm.invoke(
+        [SystemMessage(content=_system_prompt()), HumanMessage(content=synthesis_prompt)],
+        config=config,
+    )
 
     return {
         "rag_context": rag_context,
-        "tavily_context": tavily_result.get("summary", ""),
+        "tavily_context": tavily_context,
         "final_response": response.content,
     }

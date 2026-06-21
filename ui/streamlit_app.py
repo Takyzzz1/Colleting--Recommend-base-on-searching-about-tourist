@@ -1,9 +1,14 @@
 """Streamlit UI — Multi-Agent Travel Planning System."""
+import sys
+import os
+# Ensure project root is on sys.path regardless of how streamlit is invoked
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
 import uuid
 import streamlit as st
 from langchain_core.messages import HumanMessage
 from app.graph import graph
-from app.observability import get_langfuse_handler, submit_feedback
+from app.observability import get_langfuse_handler, flush_handler, submit_feedback, check_langfuse
 
 st.set_page_config(
     page_title="🗺️ AI Travel Planner",
@@ -29,7 +34,12 @@ for turn in st.session_state.chat_history:
     with st.chat_message(turn["role"]):
         st.markdown(turn["content"])
         if turn["role"] == "assistant" and turn.get("route"):
-            route_label = "🧭 General Agent" if turn["route"] == "general" else "🏖️ Travel Knowledge + Planner"
+            _route_labels = {
+                "general": "🧭 General Agent",
+                "travel": "🏖️ Travel Knowledge + Planner + Tour Comparison",
+                "clarify": "❓ Cần thêm thông tin",
+            }
+            route_label = _route_labels.get(turn["route"], "🏖️ Travel Knowledge + Planner")
             st.caption(f"Route: **{route_label}**")
 
 # ── Feedback buttons (only after last assistant turn) ─────────────────────────
@@ -61,7 +71,7 @@ if user_input:
     st.session_state.feedback_submitted = False
 
     # Build trace_id for this turn
-    trace_id = str(uuid.uuid4())
+    trace_id = uuid.uuid4().hex
 
     # Invoke the graph
     with st.chat_message("assistant"):
@@ -91,6 +101,7 @@ if user_input:
                 "travel_distances": {},
                 "estimated_budget": {},
                 "itinerary": "",
+                "tour_comparison": "",
                 "final_response": "",
                 "route": "general",
             }
@@ -102,9 +113,16 @@ if user_input:
             except Exception as e:
                 response_text = f"Đã xảy ra lỗi: {str(e)}"
                 route_taken = "general"
+            finally:
+                flush_handler(handler)
 
         st.markdown(response_text)
-        route_label = "🧭 General Agent" if route_taken == "general" else "🏖️ Travel Knowledge + Planner"
+        _route_labels = {
+            "general": "🧭 General Agent",
+            "travel": "🏖️ Travel Knowledge + Planner",
+            "clarify": "❓ Cần thêm thông tin",
+        }
+        route_label = _route_labels.get(route_taken, "🏖️ Travel Knowledge + Planner")
         st.caption(f"Route: **{route_label}**")
 
     # Persist to chat history
@@ -130,6 +148,13 @@ with st.sidebar:
 - Tôi muốn đi Hội An 2 ngày, thích ẩm thực và văn hóa
 - Kế hoạch 5 ngày Hà Nội cho cặp đôi, ngân sách 10 triệu
     """)
+    st.divider()
+    st.subheader("📊 Langfuse")
+    lf_ok, lf_msg = check_langfuse()
+    if lf_ok:
+        st.success(f"✅ {lf_msg}")
+    else:
+        st.error(f"❌ {lf_msg}")
     st.divider()
     st.caption(f"Session: `{st.session_state.session_id[:8]}...`")
     if st.button("🔄 Cuộc hội thoại mới"):

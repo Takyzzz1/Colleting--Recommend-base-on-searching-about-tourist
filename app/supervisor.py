@@ -3,8 +3,9 @@ import json
 import os
 import re
 from langchain_openai import ChatOpenAI
-from langchain_core.messages import SystemMessage, HumanMessage
-from app.config import config
+from langchain_core.messages import SystemMessage, HumanMessage, AIMessage, BaseMessage
+from langchain_core.runnables import RunnableConfig
+from app.config import config as app_config
 from app.state import TravelState
 
 _PROMPT_PATH = os.path.join(os.path.dirname(os.path.dirname(__file__)), "prompts", "supervisor.md")
@@ -16,6 +17,7 @@ _DEFAULT_OUTPUT = {
     "budget": 0.0,
     "interests": [],
     "travel_dates": "",
+    "clarification_question": "",
 }
 
 
@@ -25,8 +27,6 @@ def _system_prompt() -> str:
 
 
 def _parse_json(text: str) -> dict:
-    """Extract JSON from LLM response, handling markdown code fences."""
-    # Strip markdown code fences
     clean = re.sub(r"```(?:json)?\s*|\s*```", "", text).strip()
     try:
         return json.loads(clean)
@@ -34,32 +34,49 @@ def _parse_json(text: str) -> dict:
         return dict(_DEFAULT_OUTPUT)
 
 
-def supervisor_node(state: TravelState) -> dict:
-    # Get the latest user message as the query to classify
+def _build_history_text(messages: list[BaseMessage]) -> str:
+    """Format full message history as a readable transcript for the supervisor LLM."""
+    lines = []
+    for m in messages:
+        role = "User" if isinstance(m, HumanMessage) else "Assistant"
+        content = m.content if hasattr(m, "content") else str(m)
+        lines.append(f"{role}: {content}")
+    return "\n".join(lines)
+
+
+def supervisor_node(state: TravelState, config: RunnableConfig) -> dict:
     messages = state.get("messages", [])
-    if messages:
-        last_msg = messages[-1]
-        user_query = last_msg.content if hasattr(last_msg, "content") else str(last_msg)
-    else:
+
+    # Last human message is the current query
+    user_query = ""
+    for m in reversed(messages):
+        if isinstance(m, HumanMessage):
+            user_query = m.content if hasattr(m, "content") else str(m)
+            break
+    if not user_query:
         user_query = state.get("user_query", "")
 
+    # Build full conversation transcript for history-aware extraction
+    history_text = _build_history_text(messages)
+    input_content = (
+        f"[Toàn bộ lịch sử hội thoại]\n{history_text}\n\n"
+        f"[Câu hỏi/yêu cầu hiện tại của người dùng]\n{user_query}"
+    ) if len(messages) > 1 else user_query
+
     llm = ChatOpenAI(
-        model=config.LLM_MODEL,
-        temperature=0,  # deterministic routing
-        openai_api_key=config.OPENAI_API_KEY,
+        model=app_config.LLM_MODEL,
+        temperature=0,
+        openai_api_key=app_config.OPENAI_API_KEY,
     )
-    response = llm.invoke([
-        SystemMessage(content=_system_prompt()),
-        HumanMessage(content=user_query),
-    ])
+    response = llm.invoke(
+        [SystemMessage(content=_system_prompt()), HumanMessage(content=input_content)],
+        config=config,
+    )
 
     parsed = _parse_json(response.content)
-
-    # Merge with defaults to ensure all keys are present
     result = {**_DEFAULT_OUTPUT, **parsed}
 
-    return {
-        "route": result["route"],
+    base_updates = {
         "destination": result.get("destination", ""),
         "duration_days": int(result.get("duration_days") or 0),
         "budget": float(result.get("budget") or 0.0),
@@ -67,3 +84,13 @@ def supervisor_node(state: TravelState) -> dict:
         "travel_dates": result.get("travel_dates", ""),
         "user_query": user_query,
     }
+
+    # Clarification path: supervisor detected missing required fields
+    if result["route"] == "clarify":
+        question = result.get("clarification_question") or (
+            "Bạn có thể cho tôi biết thêm thông tin về chuyến đi không? "
+            "Tôi cần biết: điểm đến và số ngày bạn muốn đi."
+        )
+        return {**base_updates, "route": "clarify", "final_response": question}
+
+    return {**base_updates, "route": result["route"]}

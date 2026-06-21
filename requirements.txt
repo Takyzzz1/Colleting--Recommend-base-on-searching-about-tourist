@@ -3,7 +3,9 @@ langchain>=0.2
 langchain-openai>=0.1
 langchain-community>=0.2
 chromadb>=0.5
-sentence-transformers>=2.7
+sentence-transformers>=2.7,<4.0
+transformers>=4.40.0,<4.52.0
+numpy<2
 tavily-python>=0.3
 googlemaps>=4.10
 streamlit>=1.32
