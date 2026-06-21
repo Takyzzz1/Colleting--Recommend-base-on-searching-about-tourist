@@ -19,5 +19,6 @@ class TravelState(TypedDict):
     travel_distances: dict
     estimated_budget: dict
     itinerary: str
+    tour_comparison: str
     final_response: str
-    route: str  # "general" | "travel"
+    route: str  # "general" | "travel" | "clarify"

@@ -7,6 +7,7 @@ from app.router import route_after_supervisor, route_after_knowledge
 from agents.general_agent import general_agent_node
 from agents.travel_knowledge_agent import travel_knowledge_node
 from agents.planner_agent import planner_agent_node
+from agents.tour_comparison_agent import tour_comparison_node
 
 
 def build_graph():
@@ -17,6 +18,7 @@ def build_graph():
     builder.add_node("general", general_agent_node)
     builder.add_node("travel_knowledge", travel_knowledge_node)
     builder.add_node("planner", planner_agent_node)
+    builder.add_node("tour_comparison", tour_comparison_node)
 
     builder.set_entry_point("supervisor")
 
@@ -26,10 +28,12 @@ def build_graph():
         {
             "general": "general",
             "travel_knowledge": "travel_knowledge",
+            "__end__": END,
         },
     )
 
     builder.add_edge("general", END)
+
     builder.add_conditional_edges(
         "travel_knowledge",
         route_after_knowledge,
@@ -38,7 +42,10 @@ def build_graph():
             "__end__": END,
         },
     )
-    builder.add_edge("planner", END)
+
+    # After planner → compare real tours → done
+    builder.add_edge("planner", "tour_comparison")
+    builder.add_edge("tour_comparison", END)
 
     memory = MemorySaver()
     return builder.compile(checkpointer=memory)
