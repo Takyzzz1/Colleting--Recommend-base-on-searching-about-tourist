@@ -8,7 +8,7 @@ import uuid
 import streamlit as st
 from langchain_core.messages import HumanMessage
 from app.graph import graph
-from app.observability import get_langfuse_handler, flush_handler, submit_feedback
+from app.observability import get_langfuse_handler, flush_handler, submit_feedback, check_langfuse
 
 st.set_page_config(
     page_title="🗺️ AI Travel Planner",
@@ -137,6 +137,13 @@ with st.sidebar:
 - Tôi muốn đi Hội An 2 ngày, thích ẩm thực và văn hóa
 - Kế hoạch 5 ngày Hà Nội cho cặp đôi, ngân sách 10 triệu
     """)
+    st.divider()
+    st.subheader("📊 Langfuse")
+    lf_ok, lf_msg = check_langfuse()
+    if lf_ok:
+        st.success(f"✅ {lf_msg}")
+    else:
+        st.error(f"❌ {lf_msg}")
     st.divider()
     st.caption(f"Session: `{st.session_state.session_id[:8]}...`")
     if st.button("🔄 Cuộc hội thoại mới"):

@@ -1,7 +1,30 @@
 """Langfuse observability for LangGraph tracing (self-hosted via Docker)."""
 import uuid
+import logging
 from typing import Optional
 from app.config import config as app_config
+
+logger = logging.getLogger(__name__)
+
+
+def check_langfuse() -> tuple[bool, str]:
+    """
+    Verify Langfuse connection. Returns (ok, message).
+    Call this at startup or from the sidebar to diagnose issues.
+    """
+    if not app_config.LANGFUSE_PUBLIC_KEY or not app_config.LANGFUSE_SECRET_KEY:
+        return False, "Keys not set in .env (LANGFUSE_PUBLIC_KEY / LANGFUSE_SECRET_KEY)"
+    try:
+        from langfuse import Langfuse
+        lf = Langfuse(
+            public_key=app_config.LANGFUSE_PUBLIC_KEY,
+            secret_key=app_config.LANGFUSE_SECRET_KEY,
+            host=app_config.LANGFUSE_HOST,
+        )
+        lf.auth_check()
+        return True, f"Connected to {app_config.LANGFUSE_HOST}"
+    except Exception as e:
+        return False, str(e)
 
 
 def get_langfuse_handler(
@@ -39,7 +62,8 @@ def get_langfuse_handler(
         )
         handler = trace.get_langchain_handler()
         return handler, _trace_id
-    except Exception:
+    except Exception as e:
+        logger.warning("Langfuse handler creation failed: %s", e)
         return None, None
 
 
