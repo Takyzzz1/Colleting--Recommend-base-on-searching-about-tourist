@@ -107,6 +107,13 @@ if user_input:
             except Exception as e:
                 response_text = f"Đã xảy ra lỗi: {str(e)}"
                 route_taken = "general"
+            finally:
+                # Flush Langfuse buffer so traces appear immediately in dashboard
+                if handler:
+                    try:
+                        handler.flush()
+                    except Exception:
+                        pass
 
         st.markdown(response_text)
         route_label = "🧭 General Agent" if route_taken == "general" else "🏖️ Travel Knowledge + Planner"

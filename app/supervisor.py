@@ -4,6 +4,7 @@ import os
 import re
 from langchain_openai import ChatOpenAI
 from langchain_core.messages import SystemMessage, HumanMessage
+from langchain_core.runnables import RunnableConfig
 from app.config import config
 from app.state import TravelState
 
@@ -25,8 +26,6 @@ def _system_prompt() -> str:
 
 
 def _parse_json(text: str) -> dict:
-    """Extract JSON from LLM response, handling markdown code fences."""
-    # Strip markdown code fences
     clean = re.sub(r"```(?:json)?\s*|\s*```", "", text).strip()
     try:
         return json.loads(clean)
@@ -34,8 +33,7 @@ def _parse_json(text: str) -> dict:
         return dict(_DEFAULT_OUTPUT)
 
 
-def supervisor_node(state: TravelState) -> dict:
-    # Get the latest user message as the query to classify
+def supervisor_node(state: TravelState, run_config: RunnableConfig) -> dict:
     messages = state.get("messages", [])
     if messages:
         last_msg = messages[-1]
@@ -45,17 +43,15 @@ def supervisor_node(state: TravelState) -> dict:
 
     llm = ChatOpenAI(
         model=config.LLM_MODEL,
-        temperature=0,  # deterministic routing
+        temperature=0,
         openai_api_key=config.OPENAI_API_KEY,
     )
-    response = llm.invoke([
-        SystemMessage(content=_system_prompt()),
-        HumanMessage(content=user_query),
-    ])
+    response = llm.invoke(
+        [SystemMessage(content=_system_prompt()), HumanMessage(content=user_query)],
+        config=run_config,
+    )
 
     parsed = _parse_json(response.content)
-
-    # Merge with defaults to ensure all keys are present
     result = {**_DEFAULT_OUTPUT, **parsed}
 
     return {

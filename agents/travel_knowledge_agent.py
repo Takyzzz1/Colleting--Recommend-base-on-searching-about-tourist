@@ -2,6 +2,7 @@
 import os
 from langchain_openai import ChatOpenAI
 from langchain_core.messages import SystemMessage, HumanMessage
+from langchain_core.runnables import RunnableConfig
 from app.config import config
 from app.state import TravelState
 from tools.rag import rag_search
@@ -15,7 +16,7 @@ def _system_prompt() -> str:
         return f.read()
 
 
-def travel_knowledge_node(state: TravelState) -> dict:
+def travel_knowledge_node(state: TravelState, run_config: RunnableConfig) -> dict:
     destination = state.get("destination", "")
     user_query = state.get("user_query", "")
     interests = state.get("interests", [])
@@ -29,7 +30,6 @@ def travel_knowledge_node(state: TravelState) -> dict:
     rag_context = rag_result.get("context", "")
     tavily_context = tavily_result.get("summary", "")
 
-    # Let LLM synthesize a structured summary from the raw results
     llm = ChatOpenAI(
         model=config.LLM_MODEL,
         temperature=config.LLM_TEMPERATURE,
@@ -41,13 +41,13 @@ def travel_knowledge_node(state: TravelState) -> dict:
         f"Thông tin thực tế từ internet (Tavily):\n{tavily_context}\n\n"
         "Hãy tổng hợp thành một bản tóm tắt có cấu trúc theo định dạng quy định trong prompt hệ thống."
     )
-    response = llm.invoke([
-        SystemMessage(content=_system_prompt()),
-        HumanMessage(content=synthesis_prompt),
-    ])
+    response = llm.invoke(
+        [SystemMessage(content=_system_prompt()), HumanMessage(content=synthesis_prompt)],
+        config=run_config,
+    )
 
     return {
         "rag_context": rag_context,
-        "tavily_context": tavily_result.get("summary", ""),
+        "tavily_context": tavily_context,
         "final_response": response.content,
     }

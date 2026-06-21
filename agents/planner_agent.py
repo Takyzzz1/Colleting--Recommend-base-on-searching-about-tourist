@@ -3,6 +3,7 @@ import os
 import json
 from langchain_openai import ChatOpenAI
 from langchain_core.messages import SystemMessage, HumanMessage
+from langchain_core.runnables import RunnableConfig
 from app.config import config
 from app.state import TravelState
 from tools.weather import get_weather
@@ -42,7 +43,7 @@ def _get_distance_pairs(destination: str) -> list[dict]:
     return []
 
 
-def planner_agent_node(state: TravelState) -> dict:
+def planner_agent_node(state: TravelState, run_config: RunnableConfig) -> dict:
     destination = state.get("destination", "")
     travel_dates = state.get("travel_dates", "")
     duration_days = state.get("duration_days") or 3
@@ -102,10 +103,10 @@ def planner_agent_node(state: TravelState) -> dict:
         temperature=config.LLM_TEMPERATURE,
         openai_api_key=config.OPENAI_API_KEY,
     )
-    response = llm.invoke([
-        SystemMessage(content=_system_prompt()),
-        HumanMessage(content=planning_request),
-    ])
+    response = llm.invoke(
+        [SystemMessage(content=_system_prompt()), HumanMessage(content=planning_request)],
+        config=run_config,
+    )
 
     return {
         "weather": weather_data,
